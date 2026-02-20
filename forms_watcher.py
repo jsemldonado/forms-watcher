@@ -244,7 +244,8 @@ def _poll(interval: int):
                     label = _label(form)
                     print(f"  [{ts}] {label}: {detail}", flush=True)
                     if is_open:
-                        _notify(f"OPEN: {label}")
+                        spoken = form.get("name", "a form")
+                        _notify(f"{spoken} is open")
                         notified.add(fid)
                         print(f"  >>> {label} is OPEN! <<<", flush=True)
                     elif detail == "already submitted":
