@@ -320,6 +320,15 @@ def main():
             return
         forms = _load_forms()
         target = args.target
+        # Support removal by 1-based index
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(forms):
+                removed = forms.pop(idx)
+                print(f"  Removed {_label(removed)}.")
+                _save_forms(forms)
+                print(f"  {len(forms)} forms remaining.")
+                return
         before = len(forms)
         forms = [f for f in forms if target not in (f.get("name"), _short_code(f), f.get("url"))]
         if len(forms) == before:
@@ -332,8 +341,8 @@ def main():
         if not FORMS_FILE.exists():
             print("No forms configured.")
             return
-        for f in _load_forms():
-            print(f"  {_label(f)}: {f['url']}")
+        for i, f in enumerate(_load_forms(), 1):
+            print(f"  {i}. {_label(f)}: {f['url']}")
 
     elif args.command == "clear":
         if FORMS_FILE.exists():
