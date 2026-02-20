@@ -239,6 +239,9 @@ def _poll(interval: int):
                     _notify(f"OPEN: {label}")
                     notified.add(fid)
                     print(f"  >>> {label} is OPEN! <<<", flush=True)
+                elif detail == "already submitted":
+                    notified.add(fid)
+                    print(f"  (skipping {label} from now on)", flush=True)
 
             remaining = len(forms) - len(notified)
             if remaining == 0:
