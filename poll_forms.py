@@ -86,6 +86,7 @@ def _load_tokens() -> dict:
 def _save_tokens(tokens: dict):
     with open(TOKEN_FILE, "w") as f:
         json.dump(tokens, f)
+    TOKEN_FILE.chmod(0o600)
 
 
 def _refresh_tokens(tokens: dict) -> dict:
