@@ -6,4 +6,4 @@ requires-python = ">=3.10"
 dependencies = ["httpx>=0.27"]
 
 [project.scripts]
-forms-watcher = "poll_forms:main"
+forms-watcher = "forms_watcher:main"
