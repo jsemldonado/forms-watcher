@@ -257,8 +257,7 @@ def main():
     )
     sub = parser.add_subparsers(dest="command")
 
-    auth_p = sub.add_parser("auth", help="Authenticate with your Microsoft account")
-    auth_p.add_argument("--tenant", default="common", help="Azure AD tenant ID (default: common)")
+    sub.add_parser("auth", help="Authenticate with your Microsoft account")
 
     add_p = sub.add_parser("add", help="Add form URLs to watch")
     add_p.add_argument("urls", nargs="+", help="Form URLs (forms.office.com/r/xxx)")
@@ -273,7 +272,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "auth":
-        _device_code_auth(args.tenant)
+        _device_code_auth("common")
 
     elif args.command == "add":
         tokens = _load_tokens()
