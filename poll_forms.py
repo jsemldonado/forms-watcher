@@ -267,6 +267,9 @@ def main():
     add_p.add_argument("urls", nargs="+", help="Form URLs (forms.office.com/r/xxx)")
     add_p.add_argument("--name", action="append", help="Label for each form (prompted if omitted)")
 
+    rm_p = sub.add_parser("remove", help="Remove a form by name or URL")
+    rm_p.add_argument("target", help="Form name, short code, or URL")
+
     sub.add_parser("list", help="Show watched forms")
     sub.add_parser("clear", help="Remove all watched forms")
 
@@ -300,6 +303,20 @@ def main():
             existing.append(form)
         _save_forms(existing)
         print(f"\n  Watching {len(existing)} forms.")
+
+    elif args.command == "remove":
+        if not FORMS_FILE.exists():
+            print("No forms configured.")
+            return
+        forms = _load_forms()
+        target = args.target
+        before = len(forms)
+        forms = [f for f in forms if target not in (f.get("name"), f.get("short"), f.get("url"))]
+        if len(forms) == before:
+            print(f"  No form matching: {target}")
+            return
+        _save_forms(forms)
+        print(f"  Removed. {len(forms)} forms remaining.")
 
     elif args.command == "list":
         if not FORMS_FILE.exists():
