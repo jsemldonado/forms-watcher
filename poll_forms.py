@@ -283,6 +283,8 @@ def main():
     sub.add_parser("list", help="Show watched forms")
     sub.add_parser("clear", help="Remove all watched forms")
 
+    sub.add_parser("status", help="Check all forms once and exit")
+
     poll_p = sub.add_parser("poll", help="Start polling (default)")
     poll_p.add_argument("--interval", type=int, default=5, help="Seconds between checks (default: 5)")
 
@@ -348,6 +350,16 @@ def main():
         if FORMS_FILE.exists():
             FORMS_FILE.unlink()
         print("  Cleared all watched forms.")
+
+    elif args.command == "status":
+        forms = _load_forms()
+        tokens = _load_tokens()
+        tokens = _ensure_fresh(tokens)
+        with httpx.Client(timeout=10) as client:
+            client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
+            for form in forms:
+                is_open, detail = _check_form(client, form)
+                print(f"  {_label(form)}: {detail}")
 
     elif args.command == "poll" or args.command is None:
         _poll(getattr(args, "interval", 5))
