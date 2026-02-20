@@ -222,34 +222,37 @@ def _poll(interval: int):
         print(f"  - {label} ({f['url']})")
     print(flush=True)
 
-    with httpx.Client(timeout=10) as client:
-        while True:
-            tokens = _ensure_fresh(tokens)
-            client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
-            ts = time.strftime("%H:%M:%S")
+    try:
+        with httpx.Client(timeout=10) as client:
+            while True:
+                tokens = _ensure_fresh(tokens)
+                client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
+                ts = time.strftime("%H:%M:%S")
 
-            for form in forms:
-                fid = form["form_id"]
-                if fid in notified:
-                    continue
-                is_open, detail = _check_form(client, form)
-                label = form.get("name", form["short"])
-                print(f"  [{ts}] {label}: {detail}", flush=True)
-                if is_open:
-                    _notify(f"OPEN: {label}")
-                    notified.add(fid)
-                    print(f"  >>> {label} is OPEN! <<<", flush=True)
-                elif detail == "already submitted":
-                    notified.add(fid)
-                    print(f"  (skipping {label} from now on)", flush=True)
+                for form in forms:
+                    fid = form["form_id"]
+                    if fid in notified:
+                        continue
+                    is_open, detail = _check_form(client, form)
+                    label = form.get("name", form["short"])
+                    print(f"  [{ts}] {label}: {detail}", flush=True)
+                    if is_open:
+                        _notify(f"OPEN: {label}")
+                        notified.add(fid)
+                        print(f"  >>> {label} is OPEN! <<<", flush=True)
+                    elif detail == "already submitted":
+                        notified.add(fid)
+                        print(f"  (skipping {label} from now on)", flush=True)
 
-            remaining = len(forms) - len(notified)
-            if remaining == 0:
-                print("\nAll forms open. Done.")
-                break
+                remaining = len(forms) - len(notified)
+                if remaining == 0:
+                    print("\nAll forms open. Done.")
+                    break
 
-            print(f"  --- {remaining} closed, next in {interval}s ---\n", flush=True)
-            time.sleep(interval)
+                print(f"  --- {remaining} closed, next in {interval}s ---\n", flush=True)
+                time.sleep(interval)
+    except KeyboardInterrupt:
+        print("\n  Stopped.")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
