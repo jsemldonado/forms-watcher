@@ -31,8 +31,9 @@ FORMS_BASE = "https://forms.office.com"
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
-def _device_code_auth(tenant: str):
+def _device_code_auth():
     """Interactive device code login. User enters a code at microsoft.com/device."""
+    tenant = "common"
     resp = httpx.post(
         f"{MICROSOFT_LOGIN}/{tenant}/oauth2/v2.0/devicecode",
         data={"client_id": CLIENT_ID, "scope": f"{FORMS_APP_ID}/.default offline_access"},
@@ -282,7 +283,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "auth":
-        _device_code_auth("common")
+        _device_code_auth()
 
     elif args.command == "add":
         tokens = _load_tokens()
