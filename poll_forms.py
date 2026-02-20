@@ -265,7 +265,7 @@ def main():
 
     add_p = sub.add_parser("add", help="Add form URLs to watch")
     add_p.add_argument("urls", nargs="+", help="Form URLs (forms.office.com/r/xxx)")
-    add_p.add_argument("--name", action="append", help="Label for each form")
+    add_p.add_argument("--name", action="append", help="Label for each form (prompted if omitted)")
 
     sub.add_parser("list", help="Show watched forms")
     sub.add_parser("clear", help="Remove all watched forms")
@@ -283,16 +283,21 @@ def main():
         tokens = _ensure_fresh(tokens)
         existing = json.loads(FORMS_FILE.read_text()) if FORMS_FILE.exists() else []
         existing_urls = {f["url"] for f in existing}
+        interactive = not args.name
         for i, url in enumerate(args.urls):
             if url in existing_urls:
                 print(f"  Already watching: {url}")
                 continue
             print(f"  Resolving: {url}...", end=" ", flush=True)
             form = _resolve_form(url, tokens["access_token"])
+            print(f"OK (tenant={form['tenant'][:8]}... group={form['group'][:8]}...)")
             if args.name and i < len(args.name):
                 form["name"] = args.name[i]
+            elif interactive:
+                name = input(f"  Name for {form['short']} (enter to skip): ").strip()
+                if name:
+                    form["name"] = name
             existing.append(form)
-            print(f"OK (tenant={form['tenant'][:8]}... group={form['group'][:8]}...)")
         _save_forms(existing)
         print(f"\n  Watching {len(existing)} forms.")
 
