@@ -130,7 +130,7 @@ def _resolve_form(url: str, access_token: str) -> dict:
     the tenant and group IDs in the API path.
     """
     # Follow short URL to get full form ID
-    r = httpx.get(url, follow_redirects=True)
+    r = httpx.get(url, follow_redirects=True, timeout=10)
     final = str(r.url)
     params = parse_qs(urlparse(final).query)
     form_id = params.get("id", [None])[0]
