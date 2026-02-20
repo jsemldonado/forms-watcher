@@ -123,6 +123,16 @@ def _ensure_fresh(tokens: dict) -> dict:
 
 # ── Form discovery ───────────────────────────────────────────────────────────
 
+def _short_code(form: dict) -> str:
+    """Derive the short code from the form URL."""
+    return form["url"].rstrip("/").split("/")[-1]
+
+
+def _label(form: dict) -> str:
+    """Display label: name if set, otherwise short code."""
+    return form.get("name", _short_code(form))
+
+
 def _resolve_form(url: str, access_token: str) -> dict:
     """Resolve a form URL to its full metadata (form_id, tenant, group).
 
@@ -137,8 +147,6 @@ def _resolve_form(url: str, access_token: str) -> dict:
     if not form_id:
         print(f"  Could not resolve: {url}")
         sys.exit(1)
-
-    short = url.rstrip("/").split("/")[-1]
 
     # Hit startup handler to discover tenant + group from prefetchFormUrl
     startup_url = f"{FORMS_BASE}/handlers/ResponsePageStartup.ashx?id={form_id}&route=shorturl&mobile=false"
@@ -155,7 +163,6 @@ def _resolve_form(url: str, access_token: str) -> dict:
 
     return {
         "url": url,
-        "short": short,
         "form_id": form_id,
         "tenant": m.group(1),
         "group": m.group(2),
@@ -219,8 +226,7 @@ def _poll(interval: int):
 
     print(f"Polling {len(forms)} forms every {interval}s")
     for f in forms:
-        label = f.get("name", f["short"])
-        print(f"  - {label} ({f['url']})")
+        print(f"  - {_label(f)} ({f['url']})")
     print(flush=True)
 
     try:
@@ -235,7 +241,7 @@ def _poll(interval: int):
                     if fid in notified:
                         continue
                     is_open, detail = _check_form(client, form)
-                    label = form.get("name", form["short"])
+                    label = _label(form)
                     print(f"  [{ts}] {label}: {detail}", flush=True)
                     if is_open:
                         _notify(f"OPEN: {label}")
@@ -301,7 +307,7 @@ def main():
             if args.name and i < len(args.name):
                 form["name"] = args.name[i]
             elif interactive:
-                name = input(f"  Name for {form['short']} (enter to skip): ").strip()
+                name = input(f"  Name for {_short_code(form)} (enter to skip): ").strip()
                 if name:
                     form["name"] = name
             existing.append(form)
@@ -315,7 +321,7 @@ def main():
         forms = _load_forms()
         target = args.target
         before = len(forms)
-        forms = [f for f in forms if target not in (f.get("name"), f.get("short"), f.get("url"))]
+        forms = [f for f in forms if target not in (f.get("name"), _short_code(f), f.get("url"))]
         if len(forms) == before:
             print(f"  No form matching: {target}")
             return
@@ -327,8 +333,7 @@ def main():
             print("No forms configured.")
             return
         for f in _load_forms():
-            label = f.get("name", f["short"])
-            print(f"  {label}: {f['url']}")
+            print(f"  {_label(f)}: {f['url']}")
 
     elif args.command == "clear":
         if FORMS_FILE.exists():
