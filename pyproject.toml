@@ -1,0 +1,9 @@
+[project]
+name = "forms-watcher"
+version = "0.1.0"
+description = "Poll Microsoft Forms and get notified when they go live"
+requires-python = ">=3.10"
+dependencies = ["httpx>=0.27"]
+
+[project.scripts]
+forms-watcher = "poll_forms:main"
