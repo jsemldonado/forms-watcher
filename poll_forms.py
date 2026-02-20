@@ -193,7 +193,7 @@ def _check_form(client: httpx.Client, form: dict) -> tuple[bool, str]:
     tenant = form["tenant"]
     group = form["group"]
     fid = form["form_id"]
-    url = f"{FORMS_BASE}/formapi/api/{tenant}/groups/{group}/light/runtimeFormsWithResponses('{fid}')?$expand=questions($expand=choices)&$top=1"
+    url = f"{FORMS_BASE}/formapi/api/{tenant}/groups/{group}/light/runtimeFormsWithResponses('{fid}')"
     try:
         resp = client.get(url)
         if resp.status_code == 200:
