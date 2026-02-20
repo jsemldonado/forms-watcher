@@ -190,7 +190,10 @@ def _notify(message: str):
     if system == "Darwin":
         subprocess.Popen(["say", message])
     elif system == "Linux":
-        subprocess.run(["notify-send", "Forms Watcher", message], check=False)
+        subprocess.Popen(["notify-send", "Forms Watcher", message], check=False)
+    elif system == "Windows":
+        ps = f"[void](New-Object -ComObject WScript.Shell).Popup('{message}',5,'Forms Watcher',0x40)"
+        subprocess.Popen(["powershell", "-WindowStyle", "Hidden", "-c", ps])
     else:
         print(f"\a  *** {message} ***")
 
