@@ -7,12 +7,13 @@ Access tokens refresh automatically; refresh tokens last 90 days rolling.
 
 import argparse
 import json
-import os
 import platform
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -25,12 +26,12 @@ TOKEN_FILE = PROJECT_DIR / "forms_tokens.json"
 FORMS_FILE = PROJECT_DIR / "forms.json"
 
 MICROSOFT_LOGIN = "https://login.microsoftonline.com"
-FORMS_API = "https://forms.office.com/formapi/api"
+FORMS_BASE = "https://forms.office.com"
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
-def device_code_auth(tenant: str):
+def _device_code_auth(tenant: str):
     """Interactive device code login. User enters a code at microsoft.com/device."""
     resp = httpx.post(
         f"{MICROSOFT_LOGIN}/{tenant}/oauth2/v2.0/devicecode",
@@ -78,7 +79,7 @@ def _load_tokens() -> dict:
         with open(TOKEN_FILE) as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Not authenticated. Run: forms-watcher auth")
+        print("Not authenticated. Run: forms-watcher auth")
         sys.exit(1)
 
 
@@ -100,7 +101,7 @@ def _refresh_tokens(tokens: dict) -> dict:
     )
     if r.status_code != 200:
         print(f"  Token refresh failed: {r.json().get('error_description', r.text)}")
-        print(f"  Re-run: forms-watcher auth")
+        print("  Re-run: forms-watcher auth")
         sys.exit(1)
     new = r.json()
     new["_obtained_at"] = int(time.time())
@@ -118,38 +119,59 @@ def _ensure_fresh(tokens: dict) -> dict:
     return tokens
 
 
-# ── Forms config ─────────────────────────────────────────────────────────────
+# ── Form discovery ───────────────────────────────────────────────────────────
+
+def _resolve_form(url: str, access_token: str) -> dict:
+    """Resolve a form URL to its full metadata (form_id, tenant, group).
+
+    Uses ResponsePageStartup.ashx which returns prefetchFormUrl containing
+    the tenant and group IDs in the API path.
+    """
+    # Follow short URL to get full form ID
+    r = httpx.get(url, follow_redirects=True)
+    final = str(r.url)
+    params = parse_qs(urlparse(final).query)
+    form_id = params.get("id", [None])[0]
+    if not form_id:
+        print(f"  Could not resolve: {url}")
+        sys.exit(1)
+
+    short = url.rstrip("/").split("/")[-1]
+
+    # Hit startup handler to discover tenant + group from prefetchFormUrl
+    startup_url = f"{FORMS_BASE}/handlers/ResponsePageStartup.ashx?id={form_id}&route=shorturl&mobile=false"
+    r = httpx.get(startup_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+    data = r.json()
+
+    prefetch = data.get("serverInfo", {}).get("prefetchFormUrl", "")
+    # Pattern: /formapi/api/{tenant}/groups/{group}/...
+    m = re.search(r"/formapi/api/([^/]+)/groups/([^/]+)/", prefetch)
+    if not m:
+        print(f"  Could not discover tenant/group for: {url}")
+        print(f"  prefetchFormUrl: {prefetch}")
+        sys.exit(1)
+
+    return {
+        "url": url,
+        "short": short,
+        "form_id": form_id,
+        "tenant": m.group(1),
+        "group": m.group(2),
+    }
+
 
 def _load_forms() -> list[dict]:
-    """Load watched forms from forms.json."""
     try:
         with open(FORMS_FILE) as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"No forms configured. Run: forms-watcher add <url> [<url> ...]")
+        print("No forms configured. Run: forms-watcher add <url> [<url> ...]")
         sys.exit(1)
 
 
 def _save_forms(forms: list[dict]):
     with open(FORMS_FILE, "w") as f:
         json.dump(forms, f, indent=2)
-
-
-def _resolve_form_url(url: str) -> dict:
-    """Follow a forms.office.com/r/xxx short URL to extract the full form ID."""
-    r = httpx.get(url, follow_redirects=True)
-    final = str(r.url)
-    # Extract the id= parameter from the resolved URL
-    from urllib.parse import parse_qs, urlparse
-    parsed = urlparse(final)
-    params = parse_qs(parsed.query)
-    form_id = params.get("id", [None])[0]
-    if not form_id:
-        print(f"  Could not resolve form URL: {url}")
-        sys.exit(1)
-    # Extract short code from original URL
-    short = url.rstrip("/").split("/")[-1]
-    return {"short": short, "form_id": form_id, "url": url}
 
 
 # ── Notification ─────────────────────────────────────────────────────────────
@@ -161,14 +183,16 @@ def _notify(message: str):
     elif system == "Linux":
         subprocess.run(["notify-send", "Forms Watcher", message], check=False)
     else:
-        # Windows or unknown - just print loud
         print(f"\a  *** {message} ***")
 
 
 # ── Polling ──────────────────────────────────────────────────────────────────
 
-def _check_form(client: httpx.Client, tenant: str, group: str, form_id: str) -> tuple[bool, str]:
-    url = f"{FORMS_API}/{tenant}/groups/{group}/light/runtimeFormsWithResponses('{form_id}')?$expand=questions($expand=choices)&$top=1"
+def _check_form(client: httpx.Client, form: dict) -> tuple[bool, str]:
+    tenant = form["tenant"]
+    group = form["group"]
+    fid = form["form_id"]
+    url = f"{FORMS_BASE}/formapi/api/{tenant}/groups/{group}/light/runtimeFormsWithResponses('{fid}')?$expand=questions($expand=choices)&$top=1"
     try:
         resp = client.get(url)
         if resp.status_code == 200:
@@ -186,19 +210,15 @@ def _check_form(client: httpx.Client, tenant: str, group: str, form_id: str) -> 
         return False, f"error: {e}"
 
 
-def poll(interval: int):
+def _poll(interval: int):
     forms = _load_forms()
     tokens = _load_tokens()
-    tenant = tokens.get("_tenant", "common")
     notified: set[str] = set()
-
-    # Discover group ID from first form (all forms in same tenant share it)
-    # TODO: this is hardcoded for now, will be resolved in tenant refactor
-    group = "5385ae13-9f9d-4598-a665-dc861def3047"
 
     print(f"Polling {len(forms)} forms every {interval}s")
     for f in forms:
-        print(f"  - {f['url']}")
+        label = f.get("name", f["short"])
+        print(f"  - {label} ({f['url']})")
     print(flush=True)
 
     with httpx.Client(timeout=10) as client:
@@ -211,7 +231,7 @@ def poll(interval: int):
                 fid = form["form_id"]
                 if fid in notified:
                     continue
-                is_open, detail = _check_form(client, tenant, group, fid)
+                is_open, detail = _check_form(client, form)
                 label = form.get("name", form["short"])
                 print(f"  [{ts}] {label}: {detail}", flush=True)
                 if is_open:
@@ -253,24 +273,23 @@ def main():
     args = parser.parse_args()
 
     if args.command == "auth":
-        device_code_auth(args.tenant)
+        _device_code_auth(args.tenant)
 
     elif args.command == "add":
-        existing = []
-        if FORMS_FILE.exists():
-            with open(FORMS_FILE) as f:
-                existing = json.load(f)
+        tokens = _load_tokens()
+        tokens = _ensure_fresh(tokens)
+        existing = json.loads(FORMS_FILE.read_text()) if FORMS_FILE.exists() else []
         existing_urls = {f["url"] for f in existing}
         for i, url in enumerate(args.urls):
             if url in existing_urls:
                 print(f"  Already watching: {url}")
                 continue
             print(f"  Resolving: {url}...", end=" ", flush=True)
-            form = _resolve_form_url(url)
+            form = _resolve_form(url, tokens["access_token"])
             if args.name and i < len(args.name):
                 form["name"] = args.name[i]
             existing.append(form)
-            print(f"OK ({form['short']})")
+            print(f"OK (tenant={form['tenant'][:8]}... group={form['group'][:8]}...)")
         _save_forms(existing)
         print(f"\n  Watching {len(existing)} forms.")
 
@@ -278,8 +297,7 @@ def main():
         if not FORMS_FILE.exists():
             print("No forms configured.")
             return
-        forms = _load_forms()
-        for f in forms:
+        for f in _load_forms():
             label = f.get("name", f["short"])
             print(f"  {label}: {f['url']}")
 
@@ -289,8 +307,7 @@ def main():
         print("  Cleared all watched forms.")
 
     elif args.command == "poll" or args.command is None:
-        interval = getattr(args, "interval", 5)
-        poll(interval)
+        _poll(getattr(args, "interval", 5))
 
     else:
         parser.print_help()
