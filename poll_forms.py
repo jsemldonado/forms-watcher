@@ -180,7 +180,7 @@ def _save_forms(forms: list[dict]):
 def _notify(message: str):
     system = platform.system()
     if system == "Darwin":
-        subprocess.run(["say", message])
+        subprocess.Popen(["say", message])
     elif system == "Linux":
         subprocess.run(["notify-send", "Forms Watcher", message], check=False)
     else:
