@@ -291,6 +291,14 @@ def main():
     args = parser.parse_args()
 
     if args.command == "auth":
+        if TOKEN_FILE.exists():
+            tokens = json.loads(TOKEN_FILE.read_text())
+            obtained = tokens.get("_obtained_at", 0)
+            expires_in = tokens.get("expires_in", 0)
+            if time.time() < obtained + expires_in - 300:
+                ans = input("  Already authenticated. Re-auth? [y/N] ").strip().lower()
+                if ans != "y":
+                    return
         _device_code_auth()
 
     elif args.command == "add":
