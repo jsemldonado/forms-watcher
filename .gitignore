@@ -1,0 +1,6 @@
+forms_tokens.json
+forms_auth.json
+__pycache__/
+.venv/
+.playwright-mcp/
+*.pyc
